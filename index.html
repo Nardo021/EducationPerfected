@@ -6,15 +6,15 @@
   <title>Education Perfected</title>
   <style>
     :root {
-      --bg: #0f1419;
-      --panel: #1a222c;
-      --ink: #e8eef4;
-      --muted: #8b9aab;
-      --accent: #2f9e7d;
-      --accent-2: #3d7ea6;
-      --warn: #c9852f;
-      --danger: #c45c5c;
-      --line: rgba(232, 238, 244, 0.12);
+      --bg: #e7eef2;
+      --panel: #f7fafc;
+      --ink: #1c2a33;
+      --muted: #5b6b76;
+      --accent: #0f7a65;
+      --accent-2: #1f5f8a;
+      --warn: #9a6a1f;
+      --danger: #9b3d3d;
+      --line: rgba(28, 42, 51, 0.12);
     }
 
     * { box-sizing: border-box; }
@@ -22,11 +22,16 @@
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Segoe UI", "IBM Plex Sans", sans-serif;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
       color: var(--ink);
       background:
-        radial-gradient(1200px 500px at 10% -10%, rgba(61, 126, 166, 0.28), transparent 55%),
-        radial-gradient(900px 420px at 100% 0%, rgba(47, 158, 125, 0.22), transparent 50%),
+        linear-gradient(160deg, rgba(15, 122, 101, 0.10), transparent 42%),
+        linear-gradient(340deg, rgba(31, 95, 138, 0.12), transparent 40%),
+        repeating-linear-gradient(
+          -12deg,
+          rgba(28, 42, 51, 0.03) 0 1px,
+          transparent 1px 14px
+        ),
         var(--bg);
     }
 
@@ -44,12 +49,23 @@
       font-size: 1.55rem;
       letter-spacing: 0.02em;
       font-weight: 700;
+      animation: rise 420ms ease both;
     }
 
     header p {
       margin: 6px 0 0;
       color: var(--muted);
       font-size: 0.92rem;
+      animation: rise 520ms ease both;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .status, .controls, .speed, .log-panel {
+      animation: rise 600ms ease both;
     }
 
     .status {
@@ -57,7 +73,7 @@
       justify-content: space-between;
       gap: 12px;
       padding: 12px 14px;
-      background: color-mix(in srgb, var(--panel) 88%, black);
+      background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 12px;
     }
@@ -77,13 +93,13 @@
       padding: 4px 10px;
       border-radius: 999px;
       font-size: 0.75rem;
-      background: rgba(47, 158, 125, 0.18);
-      color: #8fd6bd;
+      background: rgba(15, 122, 101, 0.14);
+      color: var(--accent);
       white-space: nowrap;
     }
 
-    .pill.warn { background: rgba(201, 133, 47, 0.2); color: #efc28a; }
-    .pill.danger { background: rgba(196, 92, 92, 0.2); color: #efb0b0; }
+    .pill.warn { background: rgba(154, 106, 31, 0.14); color: var(--warn); }
+    .pill.danger { background: rgba(155, 61, 61, 0.14); color: var(--danger); }
 
     .controls {
       display: grid;
@@ -104,8 +120,8 @@
 
     button:hover:not(:disabled) {
       transform: translateY(-1px);
-      border-color: rgba(232, 238, 244, 0.28);
-      background: #223040;
+      border-color: rgba(28, 42, 51, 0.24);
+      background: #eef5f8;
     }
 
     button:disabled {
@@ -114,21 +130,23 @@
     }
 
     button.primary {
-      background: linear-gradient(135deg, var(--accent), #247a62);
+      background: linear-gradient(135deg, var(--accent), #0b5f4f);
       border-color: transparent;
+      color: #fff;
       font-weight: 600;
     }
 
     button.secondary {
-      background: linear-gradient(135deg, var(--accent-2), #2f6284);
+      background: linear-gradient(135deg, var(--accent-2), #184d70);
       border-color: transparent;
+      color: #fff;
     }
 
     .speed {
       display: grid;
       gap: 8px;
       padding: 12px 14px;
-      background: color-mix(in srgb, var(--panel) 88%, black);
+      background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 12px;
     }
@@ -176,7 +194,7 @@
       padding: 10px 12px;
       border-radius: 12px;
       border: 1px solid var(--line);
-      background: rgba(8, 12, 16, 0.72);
+      background: #f2f6f8;
       font-family: "IBM Plex Mono", "SF Mono", Consolas, monospace;
       font-size: 0.75rem;
       line-height: 1.4;
@@ -184,9 +202,9 @@
       text-align: left;
     }
 
-    .log-info { color: #c9d6e3; }
-    .log-warn { color: #efc28a; }
-    .log-error { color: #efb0b0; }
+    .log-info { color: #314652; }
+    .log-warn { color: var(--warn); }
+    .log-error { color: var(--danger); }
   </style>
 </head>
 <body>
