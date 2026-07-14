@@ -1,345 +1,409 @@
 const puppeteer = require('puppeteer');
 const readline = require('readline');
+const path = require('path');
 
-(async () => {
-    const DIR = {
-        email: 'leo.shi@student.masada.nsw.edu.au',  // replace YOUR EMAIL with your email for auto login (keep everything else the same)
-        password: 'Leocaifu2001',  // replace YOUR PASSWORD with your password for auto login
+const { loadConfig } = require('./lib/config');
+const {
+  findAnswer,
+  mergeWordLists,
+  learnAnswer,
+  loadDictionary,
+  saveDictionary,
+} = require('./lib/dictionary');
+const SELECTORS = require('./lib/selectors');
 
-        login_url: 'https://app.educationperfect.com/app/login',
+const BASE_DIR = __dirname;
 
-        // log-in page elements
-        username_css: '#loginId',
-        password_css: '#password',
+const State = {
+  BOOTING: 'booting',
+  NEED_CONFIG: 'need_config',
+  LOGGING_IN: 'logging_in',
+  READY: 'ready',
+  REFRESHING: 'refreshing',
+  ANSWERING: 'answering',
+  PAUSED: 'paused',
+  WAITING_UNKNOWN: 'waiting_unknown',
+  ERROR: 'error',
+};
 
-        // home page elements
-        home_css: 'div.view-segment-dashboard',
+function emit(type, payload = {}) {
+  // Structured events for the Electron GUI (one JSON object per line).
+  process.stdout.write(`${JSON.stringify({ type, ...payload, ts: Date.now() })}\n`);
+}
 
-        // task-starter page elements
-        baseList_css: 'div.baseLanguage',
-        targetList_css: 'div.targetLanguage',
-        start_button_css: 'button#start-button-main',
+function log(message, level = 'info') {
+  emit('log', { level, message });
+  if (process.stderr.isTTY) {
+    console.error(`[${level}] ${message}`);
+  }
+}
 
-        // task page elements
-        modal_question_css: 'td#question-field',
-        modal_correct_answer_css: 'td#correct-answer-field',
-        modal_user_answered_css: 'td#users-answer-field',
-        modal_css: 'div[uib-modal-window=modal-window]',
-        modal_backdrop_css: 'div[uib-modal-backdrop=modal-backdrop]',
+function emitStatus(extra = {}) {
+  emit('status', {
+    state: runtime.state,
+    ready: [State.READY, State.ANSWERING, State.PAUSED, State.WAITING_UNKNOWN, State.REFRESHING].includes(
+      runtime.state
+    ),
+    answering: runtime.state === State.ANSWERING,
+    autoSubmit: runtime.autoSubmit,
+    delayMs: runtime.delayMs,
+    dictSize: Object.keys(runtime.fullDict).length,
+    ...extra,
+  });
+}
 
-        question_css: '#question-text',
-        answer_box_css: 'input#answer-text',
+const runtime = {
+  state: State.BOOTING,
+  autoSubmit: true,
+  delayMs: 80,
+  fullDict: {},
+  cutDict: {},
+  page: null,
+  browser: null,
+  loopToken: 0,
+};
 
-        exit_button_css: 'button.exit-button',
-        exit_continue_button_css: 'button.continue-button',
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-        continue_button_css: 'button#continue-button',
-    }
+function persistDictionary() {
+  try {
+    saveDictionary(BASE_DIR, runtime.fullDict, runtime.cutDict);
+  } catch (error) {
+    log(`Failed to save dictionary: ${error.message}`, 'error');
+  }
+}
 
-    // launch browser
-    const browser = await puppeteer.launch({
-        headless: false,
-        defaultViewport: null,
-        handleSIGINT: false
+async function wordList(selector) {
+  return runtime.page.$$eval(selector, (els) => els.map((el) => el.textContent));
+}
+
+async function refreshWords() {
+  if (!runtime.page) throw new Error('Browser page is not ready');
+  runtime.state = State.REFRESHING;
+  emitStatus();
+
+  const baseWords = await wordList(SELECTORS.baseList);
+  const targetWords = await wordList(SELECTORS.targetList);
+  const merged = mergeWordLists(runtime.fullDict, runtime.cutDict, baseWords, targetWords);
+  runtime.fullDict = merged.fullDict;
+  runtime.cutDict = merged.cutDict;
+  persistDictionary();
+
+  log(`Word lists refreshed (${Object.keys(runtime.fullDict).length} entries).`);
+  runtime.state = State.READY;
+  emitStatus();
+}
+
+async function getModalAnswered() {
+  return runtime.page.$$eval('td#users-answer-field > *', (els) => {
+    let answered = '';
+    els.forEach((el) => {
+      if (el.textContent !== null && el.style.color !== 'rgba(0, 0, 0, 0.25)') {
+        answered += el.textContent;
+      }
     });
+    return answered;
+  });
+}
 
-    const page = (await browser.pages())[0];
+async function deleteModals() {
+  await runtime.page.$$eval(SELECTORS.modal, (els) => els.forEach((el) => el.remove()));
+  await runtime.page.$$eval(SELECTORS.modalBackdrop, (els) => els.forEach((el) => el.remove()));
+}
 
-    // Open EP page and log in
-    console.log('Starting EP page...');
-    await page.goto(DIR.login_url);
-    console.log('Waiting login page...');
-    await page.waitForSelector(DIR.username_css);
+async function correctAnswer(question, answer) {
+  await runtime.page.waitForFunction(
+    (css) => {
+      const el = document.querySelector(css);
+      return el && el.textContent && el.textContent !== 'blau';
+    },
+    { timeout: 5000 },
+    SELECTORS.modalQuestion
+  );
 
-    // THIS FILLS IN YOUR DETAILS TO LOG IN AUTOMATICALLY
-    console.log('Filling in login details...');
-    await page.type(DIR.username_css, DIR.email);
-    await page.type(DIR.password_css, DIR.password);
-    await page.keyboard.press('Enter');
+  const modalQuestion = await runtime.page.$eval(SELECTORS.modalQuestion, (el) => el.textContent);
+  const modalAnswer = await runtime.page.$eval(SELECTORS.modalCorrectAnswer, (el) => el.textContent);
+  const modalAnswered = await getModalAnswered();
 
-    console.log('Waiting for home page to load...');
-    // await page.waitForSelector(DIR.home_css, { timeout: 0 });
-    console.log('EP Home page loaded; Logged in.');
+  await runtime.page.$eval(SELECTORS.continueButton, (el) => {
+    el.disabled = false;
+  });
+  await runtime.page.click(SELECTORS.continueButton);
 
-    // ===== Auto-answer code starts here ===== //
-    let TOGGLE = false;
-    let ENTER = true;
-    let fullDict = {};
-    let cutDict = {};
+  const learned = learnAnswer(runtime.fullDict, runtime.cutDict, question, modalAnswer);
+  runtime.fullDict = learned.fullDict;
+  runtime.cutDict = learned.cutDict;
+  persistDictionary();
 
-    // Basic answer-parsing
-    function cleanString(string) {
-        return String(string)
-            .replace(/\([^)]*\)/g, "").trim()
-            .split(";")[0].trim()
-            .split(",")[0].trim()
-            .split("|")[0].trim();
+  log(
+    `Learned correction for "${question}" => "${modalAnswer}" (typed: ${answer}; modalQ: ${modalQuestion}; detected: ${modalAnswered})`
+  );
+}
+
+async function readQuestion() {
+  return runtime.page.$eval(SELECTORS.question, (el) => el.textContent);
+}
+
+async function waitForQuestionChange(previous, token) {
+  const started = Date.now();
+  while (runtime.loopToken === token && runtime.state === State.ANSWERING) {
+    const current = await readQuestion().catch(() => null);
+    if (current && current !== previous) return current;
+    if (Date.now() - started > 8000) return current || previous;
+    await wait(40);
+  }
+  return null;
+}
+
+async function handleModal(question, answer) {
+  const hasModal = await runtime.page.$(SELECTORS.modal);
+  if (!hasModal) return 'none';
+
+  if ((await runtime.page.$(SELECTORS.modalQuestion)) !== null) {
+    await correctAnswer(question, answer);
+    await deleteModals();
+    return 'corrected';
+  }
+
+  if (await runtime.page.$(SELECTORS.exitButton)) {
+    await runtime.page.click(SELECTORS.exitButton);
+    return 'finished';
+  }
+
+  if (await runtime.page.$(SELECTORS.exitContinueButton)) {
+    await runtime.page.click(SELECTORS.exitContinueButton);
+    return 'finished';
+  }
+
+  await deleteModals();
+  return 'dismissed';
+}
+
+async function answerLoop(token) {
+  log('Answer loop started.');
+  runtime.state = State.ANSWERING;
+  emitStatus();
+
+  let lastQuestion = null;
+
+  while (runtime.loopToken === token && runtime.state === State.ANSWERING) {
+    let question;
+    try {
+      question = await readQuestion();
+    } catch {
+      log('Question field not found; stopping loop.', 'warn');
+      break;
     }
 
-    // Get words from the main task page
-    async function wordList(selector) {
-        return await page.$$eval(selector, els => {
-            let words = [];
-            els.forEach(i => words.push(i.textContent));
-            return words;
-        });
+    if (lastQuestion && question === lastQuestion) {
+      question = await waitForQuestionChange(lastQuestion, token);
+      if (!question || runtime.loopToken !== token || runtime.state !== State.ANSWERING) break;
     }
 
-    // Refreshes the world lists on the main task page to enhance our vocabulary
-    async function refreshWords() {
-        const l1 = await wordList(DIR.baseList_css);
-        const l2 = await wordList(DIR.targetList_css);
-        for (let i = 0; i < l1.length; i++) {
-            fullDict[l2[i]] = cleanString(l1[i]);
-            fullDict[l1[i]] = cleanString(l2[i]);
-            cutDict[cleanString(l2[i])] = cleanString(l1[i]);
-            cutDict[cleanString(l1[i])] = cleanString(l2[i]);
-        }
-        console.log('Word Lists Refreshed.');
-        console.log('Full Dictionary:', JSON.stringify(fullDict, null, 2)); // 格式化输出 fullDict
+    const answer = findAnswer(question, runtime.fullDict, runtime.cutDict);
+    if (!answer) {
+      runtime.state = State.WAITING_UNKNOWN;
+      emitStatus({ lastQuestion: question });
+      log(`Unknown question: "${question}". Refresh words or answer manually, then Start again.`, 'warn');
+      break;
     }
 
-    // extracts what (EP detected as) the user typed, from the fancy multicolored display
-    // appended to logs for debugging/self-learning purposes
-    async function getModalAnswered() {
-        return await page.$$eval('td#users-answer-field > *', el => {
-            let answered = '';
-            el.forEach(i => {
-                if (i.textContent !== null && i.style.color !== 'rgba(0, 0, 0, 0.25)') answered = answered + i.textContent;
-            })
-            return answered;
-        });
+    await runtime.page.click(SELECTORS.answerBox, { clickCount: 3 });
+    await runtime.page.keyboard.sendCharacter(answer);
+
+    if (runtime.autoSubmit) {
+      await runtime.page.keyboard.press('Enter');
     }
 
-    // Learn from the mistakes :)
-    async function correctAnswer(question, answer) {
-        // wait until modal content is fully loaded
-        await page.waitForFunction((css) => {
-            return document.querySelector(css).textContent !== "blau";
-        }, {}, DIR.modal_question_css);
+    await wait(runtime.delayMs);
 
-        // extract modal contents (for debugging and correcting answers)
-        let modalQuestion = await page.$eval(DIR.modal_question_css, el => el.textContent);
-        let modalAnswer = await page.$eval(DIR.modal_correct_answer_css, el => el.textContent);
-        let modalCutAnswer = cleanString(modalAnswer);
-        let modalAnswered = await getModalAnswered();
-
-        // dismisses the modal (bypasses the required cooldown)
-        await page.$eval(DIR.continue_button_css, el => el.disabled = false);
-        await page.click(DIR.continue_button_css);
-
-        // update/correct answer dictionary
-        fullDict[question] = modalCutAnswer;
-
-        // logging for debugging if needed
-        let log = "===== Details after Incorrect Answer: =====\n"
-        log = log + `Detected Question: \n => ${question}\n`;
-        log = log + `Inputted Answer: \n => ${answer}\n\n`;
-        log = log + `Modal Question: \n => ${modalQuestion}\n`;
-        log = log + `Modal Full Answer: \n => ${modalAnswer}\n`;
-        log = log + `Modal Cut Answer: \n => ${modalCutAnswer}\n`;
-        log = log + `Modal Detected Answered: \n => ${modalAnswered}\n\n\n`;
-
-        console.log(log);
+    const modalResult = await handleModal(question, answer);
+    if (modalResult === 'finished') {
+      log('Task finished.');
+      break;
     }
 
-    // deletes all existing modals and backdrops. Used to force-speed things up
-    async function deleteModals() {
-        await page.$$eval(DIR.modal_css, el => {
-            el.forEach(i => i.remove())
-        });
-        await page.$$eval(DIR.modal_backdrop_css, el => {
-            el.forEach(i => i.remove())
-        });
-    }
+    lastQuestion = question;
+    await wait(Math.max(20, Math.floor(runtime.delayMs / 2)));
+  }
 
-    // very advanced logic (ofc) used to find matching answer
-    function findAnswer(question) {
-        console.log('Original question:', question);
-        let cleanedQuestion = cleanString(question);
-        console.log('Cleaned question:', cleanedQuestion);
+  await deleteModals().catch(() => {});
 
-        // Try direct match first
-        let answer = fullDict[question];
-        if (answer) {
-            console.log('Found direct match in fullDict');
-            return answer;
-        }
+  if (runtime.state === State.ANSWERING) {
+    runtime.state = State.READY;
+  }
+  emitStatus();
+  log('Answer loop exited.');
+}
 
-        // Try with cleaned question
-        answer = fullDict[cleanedQuestion];
-        if (answer) {
-            console.log('Found cleaned match in fullDict');
-            return answer;
-        }
+function startLoop() {
+  if (runtime.state === State.ANSWERING) {
+    log('Answer loop already running.', 'warn');
+    return;
+  }
+  runtime.loopToken += 1;
+  const token = runtime.loopToken;
+  answerLoop(token).catch((error) => {
+    log(`Answer loop error: ${error.message}`, 'error');
+    runtime.state = State.ERROR;
+    emitStatus();
+    runtime.state = State.READY;
+    emitStatus();
+  });
+}
 
-        // Try with comma replaced by semicolon
-        answer = fullDict[question.replace(/,/g, ";")];
-        if (answer) {
-            console.log('Found comma-replaced match in fullDict');
-            return answer;
-        }
+function stopLoop() {
+  if (runtime.state === State.ANSWERING || runtime.state === State.WAITING_UNKNOWN) {
+    runtime.loopToken += 1;
+    runtime.state = State.PAUSED;
+    emitStatus();
+    log('Answer loop paused.');
+    runtime.state = State.READY;
+    emitStatus();
+  }
+}
 
-        // Try cutDict with cleaned question
-        answer = cutDict[cleanedQuestion];
-        if (answer) {
-            console.log('Found match in cutDict');
-            return answer;
-        }
+function toggleLoop() {
+  if (runtime.state === State.ANSWERING) stopLoop();
+  else startLoop();
+}
 
-        // Try reverse lookup in cutDict
-        for (let key in cutDict) {
-            if (cleanString(key) === cleanedQuestion) {
-                console.log('Found match through reverse lookup in cutDict');
-                return cutDict[key];
-            }
-        }
+function toggleAutoSubmit() {
+  runtime.autoSubmit = !runtime.autoSubmit;
+  log(runtime.autoSubmit ? 'Switched to auto-submit mode.' : 'Switched to semi-auto mode (no Enter).');
+  emitStatus();
+}
 
-        console.log('No answer found for:', question);
-        console.log('Current fullDict:', JSON.stringify(fullDict, null, 2));
-        console.log('Current cutDict:', JSON.stringify(cutDict, null, 2));
-        return generateRandomString(8, 10);
-    }
+function setDelay(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value < 0) {
+    log(`Invalid delay: ${ms}`, 'warn');
+    return;
+  }
+  runtime.delayMs = Math.min(5000, Math.max(0, Math.round(value)));
+  log(`Delay set to ${runtime.delayMs}ms.`);
+  emitStatus();
+}
 
-    // i love creating functions so here's one for the random string instead of just returning idk answer
-    // -joshatticus
-    function generateRandomString(minLength, maxLength) {
-        const length = Math.floor(Math.random() * (maxLength - minLength + 1)) + minLength;
-        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        let result = '';
-        for (let i = 0; i < length; i++) {
-            result += characters.charAt(Math.floor(Math.random() * characters.length));
-        }
-        return result;
-    }
+async function handleCommand(raw) {
+  const input = String(raw || '').trim();
+  if (!input) return;
 
-    async function wait(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
+  const [command, ...rest] = input.split(/\s+/);
+  switch (command) {
+    case 'refresh':
+      await refreshWords();
+      break;
+    case 'start':
+      startLoop();
+      break;
+    case 'stop':
+      stopLoop();
+      break;
+    case 'toggle':
+      toggleLoop();
+      break;
+    case 'autosubmit':
+      toggleAutoSubmit();
+      break;
+    case 'speed':
+    case 'delay':
+      setDelay(rest[0]);
+      break;
+    case 'status':
+      emitStatus();
+      break;
+    case 'exit':
+      if (runtime.browser) await runtime.browser.close();
+      process.exit(0);
+      break;
+    default:
+      log(`Unknown command: ${command}`, 'warn');
+      break;
+  }
+}
 
-    // main function that continually answers questions until completion modal pops up or hotkey pressed again
-    async function answerLoop() {
-        if (TOGGLE) throw Error("Tried to initiate answerLoop while it is already running");
+async function bootstrap() {
+  const config = loadConfig(BASE_DIR);
+  runtime.delayMs = config.delayMs;
+  runtime.autoSubmit = config.autoSubmit !== false;
 
-        TOGGLE = true;
-        console.log("answerLoop entered.");
+  const dict = loadDictionary(BASE_DIR);
+  runtime.fullDict = dict.fullDict;
+  runtime.cutDict = dict.cutDict;
 
-        while (TOGGLE) {
-            let question = await page.$eval(DIR.question_css, el => el.textContent);
-            let answer = findAnswer(question);
+  if (config._missing || !config.email || !config.password || config.email.includes('YOUR_EMAIL')) {
+    runtime.state = State.NEED_CONFIG;
+    emitStatus({ configPath: config._path });
+    log(
+      `Missing config. Copy config.example.json to config.json and fill in credentials (${config._path}).`,
+      'error'
+    );
+    if (config._error) log(`Config parse error: ${config._error}`, 'error');
+  }
 
-            await page.click(DIR.answer_box_css, { clickCount: 3 });
-            await page.keyboard.sendCharacter(answer);
-            //await wait(50); // 等待0.05秒，可变
-            ENTER && page.keyboard.press('Enter');
+  log('Launching browser...');
+  runtime.browser = await puppeteer.launch({
+    headless: false,
+    defaultViewport: null,
+    handleSIGINT: false,
+  });
+  runtime.page = (await runtime.browser.pages())[0] || (await runtime.browser.newPage());
 
+  await runtime.page.goto(config.loginUrl, { waitUntil: 'domcontentloaded' });
+  await runtime.page.waitForSelector(SELECTORS.username);
 
-            // special case: modal pops up
-            if (await page.$(DIR.modal_css)) {
-                // incorrect answer and modal pops up; initiate answer-correction procedure
-                if (await page.$(DIR.modal_question_css) !== null) {
-                    await correctAnswer(question, answer);
-                    await deleteModals();
-                    // list complete; clicks button to exit
-                } else if (await page.$(DIR.exit_button_css)) {
-                    await page.click(DIR.exit_button_css);
-                    break;
-                } else if (await page.$(DIR.exit_continue_button_css)) {
-                    await page.click(DIR.exit_continue_button_css);
-                    break;
-                } else {
-                    // no idea what the modal is for so let's just pretend it doesn't exist
-                    await deleteModals();
-                }
-            }
-        }
+  if (runtime.state !== State.NEED_CONFIG) {
+    runtime.state = State.LOGGING_IN;
+    emitStatus();
+    log('Filling login details...');
+    await runtime.page.type(SELECTORS.username, config.email);
+    await runtime.page.type(SELECTORS.password, config.password);
+    await runtime.page.keyboard.press('Enter');
+  } else {
+    log('Waiting for manual login (config incomplete).');
+  }
 
-        await deleteModals();
-        TOGGLE = false;
-        console.log('answerLoop Exited.');
-    }
+  runtime.state = State.READY;
+  emitStatus();
+  log('Education Perfected ready. Open a list task, Refresh words, then Start.');
+  log(`Loaded dictionary entries: ${Object.keys(runtime.fullDict).length}`);
 
-    // takes care of answerLoop toggling logic
-    async function toggleLoop() {
-        if (TOGGLE) {
-            TOGGLE = false;
-            console.log("Stopping answerLoop.");
-        } else {
-            console.log("Starting answerLoop.");
-            answerLoop().catch(e => {
-                console.error(e);
-                TOGGLE = false
-            });
-        }
-    }
+  await runtime.page.exposeFunction('__epRefresh', () => handleCommand('refresh'));
+  await runtime.page.exposeFunction('__epToggle', () => handleCommand('toggle'));
+  await runtime.page.exposeFunction('__epAuto', () => handleCommand('autosubmit'));
 
-    async function toggleAuto() {
-        if (ENTER) {
-            ENTER = false;
-            console.log("Switched to semi-auto mode.");
-        } else {
-            ENTER = true;
-            console.log("Switched to auto mode.");
-        }
-    }
-
-    async function alert(msg) {
-        await page.evaluate(m => window.alert(m), msg);
-    }
-
-    // Expose API functions to the page (for hotkey event listeners to call)
-    await page.exposeFunction('refresh', refreshWords);
-    await page.exposeFunction('startAnswer', toggleLoop);
-    await page.exposeFunction('toggleMode', toggleAuto);
-
-    // Add event listeners for hotkeys ON the page
-    await page.evaluate(() => {
-        document.addEventListener("keyup", async (event) => {
-            console.log("Key:", event.key);
-            console.log("Alt key pressed:", event.altKey);
-
-            let key = event.key.toLowerCase();
-            if (key !== 'alt') {
-                if ((event.altKey && key === "r") || (key === "®")) {
-                    await window.refresh();
-                } else if ((event.altKey && key === "s") || (key === "ß")) {
-                    await window.startAnswer();
-                } else if ((event.altKey && key === "a") || (key === "å")) {
-                    await window.toggleMode();
-                }
-            }
-        });
+  await runtime.page.evaluate(() => {
+    document.addEventListener('keyup', async (event) => {
+      const key = event.key.toLowerCase();
+      if (key === 'alt') return;
+      if ((event.altKey && key === 'r') || key === '®') await window.__epRefresh();
+      else if ((event.altKey && key === 's') || key === 'ß') await window.__epToggle();
+      else if ((event.altKey && key === 'a') || key === 'å') await window.__epAuto();
     });
+  });
 
-    console.log('Education Perfected V2 fully Loaded.');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: false,
+  });
 
-    // Terminal input listener
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
+  rl.on('line', (line) => {
+    handleCommand(line).catch((error) => log(error.message, 'error'));
+  });
 
-    rl.on('line', async (input) => {
-        switch (input.trim()) {
-            case 'refresh':
-                await refreshWords();
-                break;
-            case 'start':
-                await toggleLoop();
-                break;
-            case 'toggle':
-                await toggleAuto();
-                break;
-            case 'exit':
-                rl.close();
-                await browser.close();
-                process.exit();
-                break;
-            default:
-                console.log('Unknown command');
-                break;
-        }
-    });
+  runtime.browser.on('disconnected', () => {
+    log('Browser closed.');
+    process.exit(0);
+  });
+}
 
-    console.log('Terminal commands: refresh, start, toggle, exit');
-})();
+bootstrap().catch((error) => {
+  runtime.state = State.ERROR;
+  emitStatus();
+  log(`Fatal: ${error.message}`, 'error');
+  process.exit(1);
+});
