@@ -61,6 +61,14 @@ typings/
 .env
 .env.test
 
+# Local secrets and learned data
+config.json
+dict.json
+
+# Packaged apps
+dist/
+release/
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 

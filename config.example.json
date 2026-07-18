@@ -1,0 +1,7 @@
+{
+  "email": "YOUR_EMAIL@school.edu",
+  "password": "YOUR_PASSWORD",
+  "loginUrl": "https://app.educationperfect.com/app/login",
+  "delayMs": 80,
+  "autoSubmit": true
+}

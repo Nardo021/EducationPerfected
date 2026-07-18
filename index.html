@@ -1,59 +1,329 @@
-<!-- index.html -->
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <title>Education Perfected</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            text-align: center;
-            margin-top: 50px;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Education Perfected</title>
+  <style>
+    :root {
+      --bg: #e7eef2;
+      --panel: #f7fafc;
+      --ink: #1c2a33;
+      --muted: #5b6b76;
+      --accent: #0f7a65;
+      --accent-2: #1f5f8a;
+      --warn: #9a6a1f;
+      --danger: #9b3d3d;
+      --line: rgba(28, 42, 51, 0.12);
+    }
 
-        button {
-            font-size: 16px;
-            padding: 10px 20px;
-            margin: 10px;
-        }
-    </style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(160deg, rgba(15, 122, 101, 0.10), transparent 42%),
+        linear-gradient(340deg, rgba(31, 95, 138, 0.12), transparent 40%),
+        repeating-linear-gradient(
+          -12deg,
+          rgba(28, 42, 51, 0.03) 0 1px,
+          transparent 1px 14px
+        ),
+        var(--bg);
+    }
+
+    main {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 28px 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 1.55rem;
+      letter-spacing: 0.02em;
+      font-weight: 700;
+      animation: rise 420ms ease both;
+    }
+
+    header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+      animation: rise 520ms ease both;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .status, .controls, .speed, .log-panel {
+      animation: rise 600ms ease both;
+    }
+
+    .status {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+
+    .status strong {
+      display: block;
+      font-size: 0.95rem;
+    }
+
+    .status span {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .pill {
+      align-self: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      background: rgba(15, 122, 101, 0.14);
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    .pill.warn { background: rgba(154, 106, 31, 0.14); color: var(--warn); }
+    .pill.danger { background: rgba(155, 61, 61, 0.14); color: var(--danger); }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 12px 10px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      border-color: rgba(28, 42, 51, 0.24);
+      background: #eef5f8;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    button.primary {
+      background: linear-gradient(135deg, var(--accent), #0b5f4f);
+      border-color: transparent;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    button.secondary {
+      background: linear-gradient(135deg, var(--accent-2), #184d70);
+      border-color: transparent;
+      color: #fff;
+    }
+
+    .speed {
+      display: grid;
+      gap: 8px;
+      padding: 12px 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+
+    .speed label {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .hints {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+
+    .log-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 220px;
+    }
+
+    .log-panel header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    #log {
+      flex: 1;
+      min-height: 200px;
+      max-height: 280px;
+      overflow: auto;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #f2f6f8;
+      font-family: "IBM Plex Mono", "SF Mono", Consolas, monospace;
+      font-size: 0.75rem;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      text-align: left;
+    }
+
+    .log-info { color: #314652; }
+    .log-warn { color: var(--warn); }
+    .log-error { color: var(--danger); }
+  </style>
 </head>
-
 <body>
-    <h1>Education Perfected</h1>
-    <button onclick="refresh()">Refresh</button>
-    <button onclick="start()">Start</button>
-    <button onclick="toggle()">Toggle</button>
+  <main>
+    <header>
+      <h1>Education Perfected</h1>
+      <p>Refresh word lists on a task page, then start answering.</p>
+    </header>
 
-    <script>
-        const refreshBtn = document.getElementById('refreshBtn');
-        const toggleBtn = document.getElementById('toggleBtn');
-        const startBtn = document.getElementById('startBtn');
+    <section class="status" aria-live="polite">
+      <div>
+        <strong id="stateLabel">Booting…</strong>
+        <span id="metaLabel">Waiting for bot process</span>
+      </div>
+      <div id="readyPill" class="pill warn">offline</div>
+    </section>
 
-        refreshBtn.disabled = true;
-        toggleBtn.disabled = true;
-        startBtn.disabled = true;
+    <section class="controls">
+      <button id="refreshBtn" class="secondary" disabled>Refresh</button>
+      <button id="startBtn" class="primary" disabled>Start / Pause</button>
+      <button id="autoBtn" disabled>Auto-submit</button>
+      <button id="restartBtn">Restart bot</button>
+    </section>
 
-        window.electronAPI.onStatusUpdate((ready) => {
-            refreshBtn.disabled = !ready;
-            toggleBtn.disabled = !ready;
-            startBtn.disabled = !ready;
-        });
+    <section class="speed">
+      <label>
+        <span>Answer delay</span>
+        <span id="delayValue">80 ms</span>
+      </label>
+      <input id="delaySlider" type="range" min="0" max="1000" step="10" value="80" disabled />
+    </section>
 
-        function start() {
-            window.electronAPI.sendCommand('start'); // 这里是 index.js 的 start => answerLoop
-        }
+    <ul class="hints">
+      <li>Hotkeys in the EP browser: Alt+R refresh, Alt+S start/pause, Alt+A auto-submit</li>
+      <li>Copy <code>config.example.json</code> → <code>config.json</code> before first run</li>
+      <li>Do not press Start in EP manually; use this app after opening the list</li>
+    </ul>
 
-        function refresh() {
-            window.electronAPI.sendCommand('refresh');
-        }
+    <section class="log-panel">
+      <header>
+        <span>Logs</span>
+        <button id="clearLogBtn" style="padding: 4px 8px; font-size: 0.75rem;">Clear</button>
+      </header>
+      <div id="log" aria-live="polite"></div>
+    </section>
+  </main>
 
-        function toggle() {
-            window.electronAPI.sendCommand('toggle');
-        }
-    </script>
+  <script>
+    const refreshBtn = document.getElementById('refreshBtn');
+    const startBtn = document.getElementById('startBtn');
+    const autoBtn = document.getElementById('autoBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const clearLogBtn = document.getElementById('clearLogBtn');
+    const delaySlider = document.getElementById('delaySlider');
+    const delayValue = document.getElementById('delayValue');
+    const stateLabel = document.getElementById('stateLabel');
+    const metaLabel = document.getElementById('metaLabel');
+    const readyPill = document.getElementById('readyPill');
+    const logEl = document.getElementById('log');
 
+    let latestStatus = { ready: false, state: 'booting', autoSubmit: true, delayMs: 80, dictSize: 0 };
+
+    function appendLog(entry) {
+      const line = document.createElement('div');
+      const level = entry.level || 'info';
+      line.className = `log-${level}`;
+      const time = new Date(entry.ts || Date.now()).toLocaleTimeString();
+      line.textContent = `[${time}] ${entry.message}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setControlsEnabled(ready) {
+      refreshBtn.disabled = !ready;
+      startBtn.disabled = !ready;
+      autoBtn.disabled = !ready;
+      delaySlider.disabled = !ready;
+    }
+
+    function renderStatus(status) {
+      latestStatus = { ...latestStatus, ...status };
+      const state = latestStatus.state || 'unknown';
+      stateLabel.textContent = state.replace(/_/g, ' ');
+      metaLabel.textContent = `dict ${latestStatus.dictSize || 0} · delay ${latestStatus.delayMs ?? 80}ms · auto ${latestStatus.autoSubmit ? 'on' : 'off'}`;
+
+      if (typeof latestStatus.delayMs === 'number') {
+        delaySlider.value = String(latestStatus.delayMs);
+        delayValue.textContent = `${latestStatus.delayMs} ms`;
+      }
+
+      autoBtn.textContent = latestStatus.autoSubmit ? 'Auto-submit: ON' : 'Auto-submit: OFF';
+      startBtn.textContent = latestStatus.answering ? 'Pause' : 'Start / Pause';
+
+      const ready = Boolean(latestStatus.ready);
+      setControlsEnabled(ready);
+      readyPill.textContent = ready ? 'ready' : state;
+      readyPill.className = 'pill' + (ready ? '' : state === 'error' || state === 'need_config' ? ' danger' : ' warn');
+    }
+
+    refreshBtn.addEventListener('click', () => window.electronAPI.sendCommand('refresh'));
+    startBtn.addEventListener('click', () => window.electronAPI.sendCommand('toggle'));
+    autoBtn.addEventListener('click', () => window.electronAPI.sendCommand('autosubmit'));
+    restartBtn.addEventListener('click', () => window.electronAPI.restartBot());
+    clearLogBtn.addEventListener('click', () => { logEl.innerHTML = ''; });
+
+    let delayTimer = null;
+    delaySlider.addEventListener('input', () => {
+      delayValue.textContent = `${delaySlider.value} ms`;
+    });
+    delaySlider.addEventListener('change', () => {
+      clearTimeout(delayTimer);
+      delayTimer = setTimeout(() => {
+        window.electronAPI.sendCommand(`delay ${delaySlider.value}`);
+      }, 120);
+    });
+
+    window.electronAPI.onStatus(renderStatus);
+    window.electronAPI.onLog(appendLog);
+    renderStatus(latestStatus);
+  </script>
 </body>
-
 </html>

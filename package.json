@@ -1,26 +1,75 @@
 {
-  "name": "ep-god",
-  "version": "1.0.0",
-  "description": "",
+  "name": "education-perfected",
+  "version": "1.1.0",
+  "description": "Desktop helper for Education Perfect list tasks (research/testing).",
   "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron ."
+    "test": "node --test test/**/*.test.js",
+    "start": "electron .",
+    "bot": "node index.js",
+    "build": "electron-builder",
+    "build:dir": "electron-builder --dir"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Nardo021/E-Perfected.git"
+    "url": "git+https://github.com/Nardo021/EducationPerfected.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "electron",
+    "puppeteer",
+    "education-perfect"
+  ],
+  "author": "Nardo021",
+  "license": "MIT",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/Nardo021/E-Perfected/issues"
+    "url": "https://github.com/Nardo021/EducationPerfected/issues"
   },
-  "homepage": "https://github.com/Nardo021/E-Perfected#readme",
+  "homepage": "https://github.com/Nardo021/EducationPerfected#readme",
   "dependencies": {
     "electron": "^35.1.5",
     "puppeteer": "^24.6.1"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.nardo021.educationperfected",
+    "productName": "Education Perfected",
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.js",
+      "index.html",
+      "lib/**/*",
+      "config.example.json",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "config.example.json",
+        "to": "config.example.json"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.education"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Education"
+    }
   }
 }
